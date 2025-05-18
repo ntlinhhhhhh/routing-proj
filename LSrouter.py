@@ -29,9 +29,7 @@ class LSrouter(Router):
         result = {}
         for port, (neighbor, cost) in self.neighbors.items():
             result[neighbor] = cost
-        
         return result
-        # return {neighbor: cost for _, (neighbor, cost) in self.neighbors.items()}
 
     def handle_packet(self, port, packet):
         """Process incoming packet."""
