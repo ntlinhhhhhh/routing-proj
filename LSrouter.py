@@ -18,7 +18,7 @@ class LSrouter(Router):
         self.heartbeat_time = heartbeat_time
         self.last_time = 0
 
-        self.neighbors = {}
+        self.neighbors = {}  # port -> (neighbor_addr, cost)
         self.forwarding_table = {}  # dst_addr -> port
         self.link_state_db = {addr: {}}  # addr -> {neighbor_addr: cost}
         self.seq_num = 0
@@ -26,7 +26,12 @@ class LSrouter(Router):
 
     def get_neighbor_map(self):
         """Return a dict: neighbor_addr -> cost."""
-        return {neighbor: cost for _, (neighbor, cost) in self.neighbors.items()}
+        result = {}
+        for port, (neighbor, cost) in self.neighbors.items():
+            result[neighbor] = cost
+        
+        return result
+        # return {neighbor: cost for _, (neighbor, cost) in self.neighbors.items()}
 
     def handle_packet(self, port, packet):
         """Process incoming packet."""
