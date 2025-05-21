@@ -24,13 +24,6 @@ class LSrouter(Router):
         self.seq_num = 0
         self.received_seq = {}  # addr -> latest seq_num
 
-    def get_neighbor_map(self):
-        """Return a dict: neighbor_addr -> cost."""
-        result = {}
-        for port, (neighbor, cost) in self.neighbors.items():
-            result[neighbor] = cost
-        return result
-
     def handle_packet(self, port, packet):
         """Process incoming packet."""
         if packet.is_traceroute:
@@ -58,17 +51,46 @@ class LSrouter(Router):
             if neighbor_port != port:
                 self.send(neighbor_port, packet)
 
+    def get_neighbor_map(self):
+        """Return a dict: neighbor_addr -> cost."""
+        result = {}
+        # Duyệt qua tất cả các cổng và lấy thông tin, gán (key, value) trong result
+        for port, (neighbor, cost) in self.neighbors.items():
+            result[neighbor] = cost
+        return result
+    
+    def _broadcast_link_state(self):
+        """Send this router's link-state to all neighbors."""
+        # Tạo một gói tin dạng ROUTING chứa thông tin trạng thái liên kết của router
+        packet = Packet(
+            kind=Packet.ROUTING,
+            src_addr=self.addr,
+            dst_addr=None, # gửi đến tất cả hàng xóm
+            content=json.dumps({
+                'src': self.addr,
+                'seq_num': self.seq_num,
+                'neighbors': self.link_state_db[self.addr]
+            })
+        )
+        for port in self.neighbors:
+            self.send(port, packet)
+
     def handle_new_link(self, port, endpoint, cost):
         """Handle new link establishment."""
-        self.neighbors[port] = (endpoint, cost)
+        #   update local data structures and forwarding table
+        #   broadcast the new link state of this router to all neighbors
+        self.neighbors[port] = (endpoint, cost) # Thêm liên kết mới vào bảng neighbors
         self.link_state_db[self.addr] = self.get_neighbor_map()
         self.seq_num += 1
 
+        # Gửi bản tin trạng thái liên kết mới đến tất cả các neighbors 
         self._broadcast_link_state()
         self._run_dijkstra()
 
     def handle_remove_link(self, port):
         """Handle removed link."""
+        #   update local data structures and forwarding table
+        #   broadcast the new link state of this router to all neighbors
         if port in self.neighbors:
             del self.neighbors[port]
         self.link_state_db[self.addr] = self.get_neighbor_map()
@@ -85,20 +107,6 @@ class LSrouter(Router):
             self.link_state_db[self.addr] = self.get_neighbor_map()
             self._broadcast_link_state()
 
-    def _broadcast_link_state(self):
-        """Send this router's link-state to all neighbors."""
-        packet = Packet(
-            kind=Packet.ROUTING,
-            src_addr=self.addr,
-            dst_addr=None,
-            content=json.dumps({
-                'src': self.addr,
-                'seq_num': self.seq_num,
-                'neighbors': self.link_state_db[self.addr]
-            })
-        )
-        for port in self.neighbors:
-            self.send(port, packet)
 
     def _run_dijkstra(self):
         """Recompute forwarding table using Dijkstra's algorithm."""
