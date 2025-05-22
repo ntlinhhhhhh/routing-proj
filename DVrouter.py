@@ -22,7 +22,7 @@ class DVrouter(Router):
         self.neighbor_vectors = {}                 # neighbor_addr -> their last sent vector
         self.link_costs       = {}                 # neighbor_addr -> direct link cost
 
-        # maps port <-> neighbor để forwarding
+        # maps lưu ánh xạ dùng trong gửi, nhận link
         self.port_to_neighbor = {}
         self.neighbor_to_port = {}
 
@@ -89,42 +89,35 @@ class DVrouter(Router):
     def handle_time(self, time_ms):
         if time_ms - self.last_time >= self.heartbeat_time:
             self.last_time = time_ms
-            self.broadcast_vector()
-
-    def update_routing_table(self):
-     my_addr = self.addr
-     new_routes = {my_addr: (0, my_addr)}  # Tới chính mình cost=0
-    
-     # Duyệt qua tất cả hàng xóm
-     for neighbor, neighbor_routes in self.neighbor_vectors.items():
-        if neighbor not in self.link_costs:
-            continue  # Bỏ qua nếu không có thông tin chi phí
+            self.broadcast_vector() 
             
-        cost_to_neighbor = self.link_costs[neighbor]
-        
-        # Cập nhật đường đi qua hàng xóm này
-        for dest, neighbor_cost in neighbor_routes.items():
-            total_cost = cost_to_neighbor + neighbor_cost
-            
-            # Chỉ cập nhật nếu đường đi tốt hơn
-            if total_cost < new_routes.get(dest, (INFINITY,))[0]:
-                new_routes[dest] = (total_cost, neighbor)
-    
-     self.routing_table = new_routes
+    def recompute_table(self):
+        """Rebuild routing_table từ neighbor_vectors + link_costs."""
+        me = self.addr
+        new_table = {me: (0, me)} # Tới chính mình cost=0
 
-def send_routes_to_neighbors(self):
-    """Gửi bảng định tuyến cho các hàng xóm, áp dụng Poisoned Reverse"""
-    for neighbor, port in self.neighbor_to_port.items():
-        # Tạo bảng định tuyến đặc biệt cho từng hàng xóm
-        poisoned_routes = {}
-        
-        for dest, (cost, next_hop) in self.routing_table.items():
-            # Nếu hàng xóm là next-hop thì báo cost=INFINITY (Poisoned Reverse)
-            poisoned_routes[dest] = INFINITY if next_hop == neighbor else cost
-        
-        # Đóng gói và gửi đi
-        pkt = Packet(Packet.ROUTING, self.addr, neighbor, json.dumps(poisoned_routes))
-        self.send(port, pkt)
+        # Duyệt qua tất cả hàng xóm
+        for nbr, vec in self.neighbor_vectors.items():
+            if nbr not in self.link_costs:
+                continue # Bỏ qua nếu không có thông tin chi phí
+            # Cập nhật đường đi qua hàng xóm này
+            link_cost = self.link_costs[nbr]
+            for dest, nbr_cost in vec.items():
+                total = min(link_cost + nbr_cost, INFINITY)
+                if total >= INFINITY:
+                    continue
+                if dest not in new_table or total < new_table[dest][0]:
+                    new_table[dest] = (total, nbr) # Chỉ cập nhật nếu đường đi tốt hơn
 
+        self.routing_table = new_table
+
+    def broadcast_vector(self):
+        """Broadcast poisoned distance vector to neighbors."""
+        for nbr, port in self.neighbor_to_port.items():
+            poisoned = {}
+            for dest, (cost, nh) in self.routing_table.items():
+                poisoned[dest] = INFINITY if nh == nbr else cost
+            pkt = Packet(Packet.ROUTING, self.addr, nbr, json.dumps(poisoned))
+            self.send(port, pkt)
     def __repr__(self):
         return f"DVrouter(addr={self.addr}, neighbors={len(self.neighbors)}, routes={len(self.forwarding_table)})"
